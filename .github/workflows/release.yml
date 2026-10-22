@@ -1,11 +1,15 @@
+
 name: Build Flycut
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [master, main]
   pull_request:
-    branches: [ master, main ]
+    branches: [master, main]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -15,8 +19,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: Check Xcode
+        run: |
+          xcode-select -p
+          xcodebuild -version
 
       - name: Build macOS App
         run: |
@@ -25,25 +31,33 @@ jobs:
             -scheme "Flycut" \
             -configuration Release \
             -destination "platform=macOS" \
-            -derivedDataPath ./build \
+            -derivedDataPath "$RUNNER_TEMP/FlycutBuild" \
             CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED="NO" \
-            CODE_SIGNING_ALLOWED="NO" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             build
 
       - name: Locate and Archive Build
         run: |
-          APP_PATH=$(find ./build/Build/Products/Release -name "Flycut.app" -type d | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: Flycut.app not found. Checking build directory:"
-            find ./build/Build/Products -maxdepth 3
+          APP_PATH="$RUNNER_TEMP/FlycutBuild/Build/Products/Release/Flycut.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Error: Flycut.app not found"
+            find "$RUNNER_TEMP/FlycutBuild/Build/Products" -maxdepth 3 -print
             exit 1
           fi
-          echo "Found app at: $APP_PATH"
-          ditto -c -k --keepParent "$APP_PATH" "$GITHUB_WORKSPACE/Flycut.zip"
+
+          # Verify the app bundle
+          test -f "$APP_PATH/Contents/Info.plist"
+
+          ditto -c -k --keepParent \
+            "$APP_PATH" \
+            "$GITHUB_WORKSPACE/Flycut.zip"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Flycut-macOS
           path: Flycut.zip
+          if-no-files-found: error
+          retention-days: 14
