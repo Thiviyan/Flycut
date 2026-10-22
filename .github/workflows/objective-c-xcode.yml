@@ -1,0 +1,44 @@
+name: Build Flycut
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build macOS App
+        run: |
+          xcodebuild \
+            -project Flycut.xcodeproj \
+            -scheme "Flycut" \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED="NO" \
+            CODE_SIGNING_ALLOWED="NO" \
+            build
+
+      - name: Locate and Archive Build
+        run: |
+          BUILD_DIR=$(xcodebuild -project Flycut.xcodeproj -scheme "Flycut" -showBuildSettings | grep -m 1 " BUILT_PRODUCTS_DIR =" | awk '{print $3}')
+          echo "Built products dir: $BUILD_DIR"
+          cd "$BUILD_DIR"
+          ditto -c -k --keepParent Flycut.app "$GITHUB_WORKSPACE/Flycut.zip"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flycut-macOS
+          path: Flycut.zip
