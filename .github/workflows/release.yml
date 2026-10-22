@@ -1,24 +1,73 @@
 
-BUILD_DIR=$(xcodebuild \
-  -project Flycut.xcodeproj \
-  -scheme "Flycut" \
-  -configuration Release \
-  -showBuildSettings \
-  | awk -F ' = ' '/^[[:space:]]*BUILT_PRODUCTS_DIR = / {print $2; exit}')
+name: Build Flycut
 
-echo "Built products dir: $BUILD_DIR"
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
 
-APP_PATH="$BUILD_DIR/Flycut.app"
+permissions:
+  contents: read
 
-if [ ! -d "$APP_PATH" ]; then
-  echo "Error: Flycut.app not found at $APP_PATH"
-  echo "Checking available Release products:"
-  find "$BUILD_DIR" -maxdepth 2 -print 2>/dev/null || true
-  exit 1
-fi
+jobs:
+  build:
+    runs-on: macos-latest
 
-echo "Found app: $APP_PATH"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-ditto -c -k --keepParent \
-  "$APP_PATH" \
-  "$GITHUB_WORKSPACE/Flycut.zip"
+      - name: Check Xcode
+        run: |
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Build Flycut macOS App
+        run: |
+          xcodebuild \
+            -project Flycut.xcodeproj \
+            -scheme "Flycut" \
+            -configuration Release \
+            -destination "platform=macOS" \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify and Archive App
+        run: |
+          APP_PATH="$GITHUB_WORKSPACE/build/Build/Products/Release/Flycut.app"
+
+          echo "Looking for app at: $APP_PATH"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Error: Flycut.app was not found."
+            echo "Available build products:"
+            find "$GITHUB_WORKSPACE/build/Build/Products" -maxdepth 3 -print
+            exit 1
+          fi
+
+          if [ ! -f "$APP_PATH/Contents/Info.plist" ]; then
+            echo "Error: App bundle is missing Info.plist."
+            exit 1
+          fi
+
+          echo "App found. Creating ZIP archive..."
+
+          ditto -c -k --keepParent \
+            "$APP_PATH" \
+            "$GITHUB_WORKSPACE/Flycut.zip"
+
+          echo "Archive created:"
+          ls -lh "$GITHUB_WORKSPACE/Flycut.zip"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flycut-macOS
+          path: Flycut.zip
+          if-no-files-found: error
+          retention-days: 14
