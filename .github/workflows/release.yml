@@ -1,63 +1,24 @@
 
-name: Build Flycut
+BUILD_DIR=$(xcodebuild \
+  -project Flycut.xcodeproj \
+  -scheme "Flycut" \
+  -configuration Release \
+  -showBuildSettings \
+  | awk -F ' = ' '/^[[:space:]]*BUILT_PRODUCTS_DIR = / {print $2; exit}')
 
-on:
-  push:
-    branches: [master, main]
-  pull_request:
-    branches: [master, main]
-  workflow_dispatch:
+echo "Built products dir: $BUILD_DIR"
 
-permissions:
-  contents: read
+APP_PATH="$BUILD_DIR/Flycut.app"
 
-jobs:
-  build:
-    runs-on: macos-latest
+if [ ! -d "$APP_PATH" ]; then
+  echo "Error: Flycut.app not found at $APP_PATH"
+  echo "Checking available Release products:"
+  find "$BUILD_DIR" -maxdepth 2 -print 2>/dev/null || true
+  exit 1
+fi
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+echo "Found app: $APP_PATH"
 
-      - name: Check Xcode
-        run: |
-          xcode-select -p
-          xcodebuild -version
-
-      - name: Build macOS App
-        run: |
-          xcodebuild \
-            -project Flycut.xcodeproj \
-            -scheme "Flycut" \
-            -configuration Release \
-            -destination "platform=macOS" \
-            -derivedDataPath "$RUNNER_TEMP/FlycutBuild" \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
-      - name: Locate and Archive Build
-        run: |
-          APP_PATH="$RUNNER_TEMP/FlycutBuild/Build/Products/Release/Flycut.app"
-
-          if [ ! -d "$APP_PATH" ]; then
-            echo "Error: Flycut.app not found"
-            find "$RUNNER_TEMP/FlycutBuild/Build/Products" -maxdepth 3 -print
-            exit 1
-          fi
-
-          # Verify the app bundle
-          test -f "$APP_PATH/Contents/Info.plist"
-
-          ditto -c -k --keepParent \
-            "$APP_PATH" \
-            "$GITHUB_WORKSPACE/Flycut.zip"
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Flycut-macOS
-          path: Flycut.zip
-          if-no-files-found: error
-          retention-days: 14
+ditto -c -k --keepParent \
+  "$APP_PATH" \
+  "$GITHUB_WORKSPACE/Flycut.zip"
